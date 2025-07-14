@@ -1,0 +1,26 @@
+{
+  "name": "kstmostofa/laravel-smpp",
+  "description": "PHP SMPP client lib, supports SMPP v3.4",
+  "keywords": ["smpp", "sms", "texting", "gsm"],
+  "homepage": "https://github.com/kstmostofa/laravel-smpp",
+  "type": "library",
+  "license": "LGPL-2.0-or-later",
+  "authors": [
+    {
+      "name": "Md Mostafijur Rahman",
+      "email": "mostofa122@gmail.com"
+    }
+  ],
+  "require": {
+    "php": ">=5.4",
+    "ext-sockets": "*",
+    "ext-mbstring": "*"
+  },
+  "require-dev": {
+  },
+  "autoload": {
+    "psr-4": {
+      "smpp\\":   "src/"
+    }
+  }
+}
