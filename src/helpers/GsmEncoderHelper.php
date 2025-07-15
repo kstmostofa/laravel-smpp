@@ -1,7 +1,7 @@
 <?php
 
 
-namespace smpp\helpers;
+namespace Kstmostofa\LaravelSmpp\Helpers;
 
 /**
  * Class capable of encoding GSM 03.38 default alphabet and packing octets into septets as described by GSM 03.38.
@@ -9,7 +9,7 @@ namespace smpp\helpers;
  *
  * Copyright (C) 2011 OnlineCity
  * Licensed under the MIT license, which can be read at: http://www.opensource.org/licenses/mit-license.php
- * @author hd@onlinecity.dk
+ * @author mostofa122@gmail.com
  */
 class GsmEncoderHelper
 {

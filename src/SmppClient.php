@@ -1,24 +1,21 @@
 <?php
 
 
-namespace smpp;
+namespace Kstmostofa\LaravelSmpp;
 
 use Exception;
-use smpp\exceptions\SmppException;
-use smpp\exceptions\SocketTransportException;
-use smpp\transport\Socket;
+use Kstmostofa\LaravelSmpp\Exceptions\SmppException;
+use Kstmostofa\LaravelSmpp\Exceptions\SocketTransportException;
+use Kstmostofa\LaravelSmpp\Transport\Socket;
 
 /**
  * Class for receiving or sending sms through SMPP protocol.
  * This is a reduced implementation of the SMPP protocol, and as such not all features will or ought to be available.
  * The purpose is to create a lightweight and simplified SMPP client.
  *
- * @author hd@onlinecity.dk, paladin
+ * @author mostofa122@gmailcom
  * @see http://en.wikipedia.org/wiki/Short_message_peer-to-peer_protocol - SMPP 3.4 protocol specification
  * Derived from work done by paladin, see: http://sourceforge.net/projects/phpsmppapi/
- *
- * Copyright (C) 2011 OnlineCity
- * Copyright (C) 2006 Paladin
  *
  * This library is free software; you can redistribute it and/or modify it under the terms of
  * the GNU Lesser General Public License as published by the Free Software Foundation; either
@@ -30,7 +27,7 @@ use smpp\transport\Socket;
  *
  * This license can be read at: http://www.opensource.org/licenses/lgpl-2.1.php
  */
-class Client
+class SmppClient
 {
     /** @var string  */
     const MODE_TRANSMITTER = 'transmitter';
@@ -91,18 +88,18 @@ class Client
 
     public $debug;
 
-    protected $pduQueue;
+    public $pduQueue;
 
-    protected $transport;
-    protected $debugHandler;
+    public $transport;
+    public $debugHandler;
 
     // Used for reconnect
-    protected $mode;
+    public $mode;
     private $login;
     private $pass;
 
-    protected $sequenceNumber;
-    protected $sarMessageReferenceNumber;
+    public $sequenceNumber;
+    public $sarMessageReferenceNumber;
 
     /**
      * Construct the SMPP class
@@ -110,16 +107,48 @@ class Client
      * @param Socket $transport
      * @param string $debugHandler
      */
-    public function __construct(Socket $transport, $debugHandler = null)
+    public function __construct(
+        string $host,
+        int $port,
+        string $username,
+        string $password,
+        int $timeout = 10000,
+        bool $debug = false,
+               $debugHandler = null
+    )
     {
         // Internal parameters
         $this->sequenceNumber = 1;
-        $this->debug = false;
+        $this->debug = $debug;
         $this->pduQueue = [];
 
-        $this->transport = $transport;
+        $this->transport = new Socket([$host], $port);
+        $this->transport->setRecvTimeout($timeout);
+        $this->transport->debug = $debug;
+
         $this->debugHandler = $debugHandler ? $debugHandler : 'error_log';
         $this->mode = null;
+        $this->login = $username;
+        $this->pass = $password;
+    }
+
+    /**
+     * Set custom configuration for the SMPP client.
+     *
+     * @param array $config
+     * @return void
+     */
+    public function setConfig(array $config)
+    {
+        $this->login = $config['username'] ?? $this->login;
+        $this->pass = $config['password'] ?? $this->pass;
+        $this->debug = $config['debug'] ?? $this->debug;
+
+        if (isset($config['host']) && isset($config['port'])) {
+            $this->transport = new Socket([$config['host']], $config['port']);
+            $this->transport->setRecvTimeout($config['timeout'] ?? 10000);
+            $this->transport->debug = $this->debug;
+        }
     }
 
     /**
@@ -130,7 +159,7 @@ class Client
      * @throws SmppException
      * @throws Exception
      */
-    public function bindReceiver($login, $pass)
+    public function bindReceiver()
     {
         if (!$this->transport->isOpen()) {
             throw new SocketTransportException('Socket is not open');
@@ -139,14 +168,12 @@ class Client
             call_user_func($this->debugHandler, 'Binding receiver...');
         }
 
-        $response = $this->bind($login, $pass, SMPP::BIND_RECEIVER);
+        $response = $this->bind($this->login, $this->pass, SMPP::BIND_RECEIVER);
 
         if ($this->debug) {
             call_user_func($this->debugHandler, "Binding status  : " . $response->status);
         }
         $this->mode = self::MODE_RECEIVER;
-        $this->login = $login;
-        $this->pass = $pass;
     }
 
     /**
@@ -157,7 +184,7 @@ class Client
      * @throws SmppException
      * @throws Exception
      */
-    public function bindTransmitter($login, $pass)
+    public function bindTransmitter()
     {
         if (!$this->transport->isOpen()) {
             throw new SocketTransportException('Socket is not open');
@@ -167,14 +194,12 @@ class Client
             call_user_func($this->debugHandler, 'Binding transmitter...');
         }
 
-        $response = $this->bind($login, $pass, SMPP::BIND_TRANSMITTER);
+        $response = $this->bind($this->login, $this->pass, SMPP::BIND_TRANSMITTER);
 
         if ($this->debug) {
             call_user_func($this->debugHandler, "Binding status  : " . $response->status);
         }
         $this->mode = self::MODE_TRANSMITTER;
-        $this->login = $login;
-        $this->pass = $pass;
     }
 
     /**
@@ -183,20 +208,18 @@ class Client
      * @return bool
      * @throws Exception
      */
-    public function bindTransceiver($login, $pass)
+    public function bindTransceiver()
     {
         if (!$this->transport->isOpen()) {
             throw new SocketTransportException('Socket is not open');
         }
 
-        $response = $this->bind($login, $pass, SMPP::BIND_TRANSCEIVER);
+        $response = $this->bind($this->login, $this->pass, SMPP::BIND_TRANSCEIVER);
 
         if ($this->debug) {
             call_user_func($this->debugHandler, "Binding status  : " . $response->status);
         }
         $this->mode = self::MODE_TRANSCEIVER;
-        $this->login = $login;
-        $this->pass = $pass;
     }
 
     /**
@@ -235,7 +258,7 @@ class Client
         // Check for support for new date classes
         if (!class_exists('DateTime') || !class_exists('DateInterval')) $newDates = false;
 
-        $numMatch = preg_match('/^(\\d{2})(\\d{2})(\\d{2})(\\d{2})(\\d{2})(\\d{2})(\\d{1})(\\d{2})([R+-])$/', $input, $matches);
+        $numMatch = preg_match('/^(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{1})(\d{2})([R+-])$/', $input, $matches);
         if (!$numMatch) return null;
         list($whole, $y, $m, $d, $h, $i, $s, $t, $n, $p) = $matches;
 
@@ -475,7 +498,7 @@ class Client
      * @return string message id
      * @throws Exception
      */
-    protected function submit_sm(
+    public function submit_sm(
         Address $source,
         Address $destination,
                 $short_message = null,
@@ -530,7 +553,7 @@ class Client
      * Get a CSMS reference number for sar_msg_ref_num.
      * Initializes with a random value, and then returns the number in sequence with each call.
      */
-    protected function getCsmsReference()
+    public function getCsmsReference()
     {
         $limit = (self::$csmsMethod == self::CSMS_8BIT_UDH) ? 255 : 65535;
         if (!isset($this->sarMessageReferenceNumber)) {
@@ -555,7 +578,7 @@ class Client
      * @param integer $dataCoding (optional)
      * @return array
      */
-    protected function splitMessageString($message, $split, $dataCoding = SMPP::DATA_CODING_DEFAULT)
+    public function splitMessageString($message, $split, $dataCoding = SMPP::DATA_CODING_DEFAULT)
     {
         switch ($dataCoding) {
             case SMPP::DATA_CODING_DEFAULT:
@@ -603,7 +626,7 @@ class Client
      * @return bool|Pdu
      * @throws Exception
      */
-    protected function bind($login, $pass, $commandID)
+    public function bind($login, $pass, $commandID)
     {
         // Make PDU body
         $pduBody = pack(
@@ -632,7 +655,7 @@ class Client
      * @param Pdu $pdu - received PDU from SMSC.
      * @return DeliveryReceipt|Sms parsed PDU as array.
      */
-    protected function parseSMS(Pdu $pdu)
+    public function parseSMS(Pdu $pdu)
     {
         // Check command id
         if ($pdu->id != SMPP::DELIVER_SM) throw new \InvalidArgumentException('PDU is not an received SMS');
@@ -773,7 +796,7 @@ class Client
      * This is mostly to deal with the situation were we run out of sequence numbers
      * @throws Exception
      */
-    protected function reconnect()
+    public function reconnect()
     {
         $this->close();
         sleep(self::RECONNECT_DELAY);
@@ -783,17 +806,17 @@ class Client
         switch ($this->mode) {
             case self::MODE_TRANSMITTER:
             {
-                $this->bindTransmitter($this->login, $this->pass);
+                $this->bindTransmitter();
                 break;
             }
             case self::MODE_RECEIVER:
             {
-                $this->bindReceiver($this->login, $this->pass);
+                $this->bindReceiver();
                 break;
             }
             case self::MODE_TRANSCEIVER:
             {
-                $this->bindTransceiver($this->login, $this->pass);
+                $this->bindTransceiver();
                 break;
             }
             default:
@@ -808,7 +831,7 @@ class Client
      * @return bool|Pdu
      * @throws Exception
      */
-    protected function sendCommand($id, $pduBody)
+    public function sendCommand($id, $pduBody)
     {
         if (!$this->transport->isOpen()) {
             throw new SocketTransportException('Socket is not open');
@@ -839,7 +862,7 @@ class Client
      * Prepares and sends PDU to SMSC.
      * @param Pdu $pdu
      */
-    protected function sendPDU(Pdu $pdu)
+    public function sendPDU(Pdu $pdu)
     {
         $length = strlen($pdu->body) + 16;
         $header = pack("NNNN", $length, $pdu->id, $pdu->status, $pdu->sequence);
@@ -862,7 +885,7 @@ class Client
      * @return Pdu|bool
      * @throws SmppException
      */
-    protected function readPduResponse($sequenceNumber, $commandID)
+    public function readPduResponse($sequenceNumber, $commandID)
     {
         // Get response cmd id from command ID
         $commandID = $commandID | SMPP::GENERIC_NACK;
@@ -905,7 +928,7 @@ class Client
      * Reads incoming PDU from SMSC.
      * @return bool|Pdu
      */
-    protected function readPDU()
+    public function readPDU()
     {
         // Read PDU length
         $bufLength = $this->transport->read(4);
@@ -958,7 +981,7 @@ class Client
      * @param boolean $firstRead - is this the first bytes read from array?
      * @return string.
      */
-    protected function getString(&$ar, $maxLength = 255, $firstRead = false)
+    public function getString(&$ar, $maxLength = 255, $firstRead = false)
     {
         $s = "";
         $i = 0;
@@ -978,7 +1001,7 @@ class Client
      * @param int $length
      * @return string
      */
-    protected function getOctets(&$ar, $length)
+    public function getOctets(&$ar, $length)
     {
         $s = "";
         for ($i = 0; $i < $length; $i++) {
@@ -991,7 +1014,7 @@ class Client
         return $s;
     }
 
-    protected function parseTag(&$ar)
+    public function parseTag(&$ar)
     {
         $unpackedData = unpack(
             'nid/nlength',
@@ -1022,5 +1045,10 @@ class Client
             call_user_func($this->debugHandler, " value  :" . chunk_split(bin2hex($tag->value), 2, " "));
         }
         return $tag;
+    }
+
+    public function getTransport()
+    {
+        return $this->transport;
     }
 }

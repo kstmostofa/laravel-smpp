@@ -1,9 +1,9 @@
 <?php
 
 
-namespace smpp\transport;
+namespace Kstmostofa\LaravelSmpp\Transport;
 
-use smpp\exceptions\SocketTransportException;
+use Kstmostofa\LaravelSmpp\Exceptions\SocketTransportException;
 
 !defined('MSG_DONTWAIT') && define('MSG_DONTWAIT', 64);
 
@@ -15,7 +15,7 @@ use smpp\exceptions\SocketTransportException;
  *
  * Copyright (C) 2011 OnlineCity
  * Licensed under the MIT license, which can be read at: http://www.opensource.org/licenses/mit-license.php
- * @author hd@onlinecity.dk
+ * @author mostofa122@gmail.com
  */
 class Socket
 {

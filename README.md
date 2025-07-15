@@ -4,196 +4,249 @@ PHP SMPP (v3.4) client
 Install:
 
     composer require kstmostofa/laravel-smpp
-    
-Example of wrapper (php>=7.0) for this Client.
-In this case we got ALPHANUMERIC sender value 'SMPP':
 
-```php
-<?php
+Laravel Integration
+-------------------
 
-namespace App\Services;
+This package supports Laravel's package auto-discovery. After installing, you can use the `LaravelSmpp` facade.
 
-use Exception;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Log;
-use smpp\{Address, Client as SmppClient, SMPP, transport\Socket};
 
-class SmsBuilder
-{
-    const DEFAULT_SENDER = 'SMPP';
-    protected Socket $transport;
-    protected SmppClient $smppClient;
-    protected Address $from;
-    protected Address $to;
-    protected string $login;
-    protected string $password;
-    protected bool $debug;
+### Configuration
 
-    public function __construct(
-        string $address,
-        int    $port,
-        string $login,
-        string $password,
-        int    $timeout = 10000,
-        bool   $debug = false
-    )
-    {
-        $this->transport = new Socket([$address], $port);
-        $this->transport->setRecvTimeout($timeout);
+You can publish the configuration file using the following command:
 
-        $this->smppClient = new SmppClient($this->transport);
-        $this->smppClient->debug = $debug;
-        $this->transport->debug = $debug;
-
-        $this->login = $login;
-        $this->password = $password;
-        $this->debug = $debug;
-
-        $this->from = new Address(self::DEFAULT_SENDER, SMPP::TON_ALPHANUMERIC);
-    }
-
-    public function setSender(string $sender, int $ton = SMPP::TON_ALPHANUMERIC): self
-    {
-        return $this->setAddress($sender, 'from', $ton);
-    }
-
-    protected function setAddress(string $address, string $type, int $ton = SMPP::TON_UNKNOWN, int $npi = SMPP::NPI_UNKNOWN): self
-    {
-        if ($ton === SMPP::TON_INTERNATIONAL) {
-            $npi = SMPP::NPI_E164;
-        }
-
-        $this->$type = new Address($address, $ton, $npi);
-        return $this;
-    }
-
-    public function setRecipient(string $address, int $ton = SMPP::TON_INTERNATIONAL): self
-    {
-        return $this->setAddress($address, 'to', $ton);
-    }
-
-    /**
-     * Send SMS and optionally receive DLR (1 DLR only in blocking mode)
-     *
-     * @param string $message
-     * @param bool $waitForDLR Whether to wait for DLR (blocking read)
-     * @return string|null message_id
-     */
-    public function sendMessage(string $message, bool $waitForDLR = false): ?string
-    {
-        $this->transport->open();
-        $this->smppClient->bindTransceiver($this->login, $this->password);
-
-        $messageId = $this->smppClient->sendSMS(
-            $this->from,
-            $this->to,
-            $message,
-            null,
-            SMPP::DATA_CODING_DEFAULT
-        );
-
-        if ($waitForDLR) {
-            $this->receiveDLR();
-        }
-
-        $this->smppClient->close();
-
-        return $messageId;
-    }
-
-    /**
-     * Blocking call to wait and receive DLR
-     */
-    protected function receiveDLR(): void
-    {
-        try {
-            $dlr = $this->smppClient->readSMS();
-            if ($dlr && $dlr->message && str_contains($dlr->message, 'stat:')) {
-                $parsed = $this->parseDLR($dlr->message);
-                logger()->info("DLR received", $parsed);
-            } else {
-                logger()->info('Received message is not a DLR', ['message' => $dlr?->message]);
-            }
-        } catch (Exception $e) {
-            logger()->error("Error receiving DLR: " . $e->getMessage());
-        }
-    }
-
-    /**
-     * Parse a DLR short_message string
-     */
-    protected function parseDLR(string $dlrText): array
-    {
-        $parts = explode(' ', $dlrText);
-        $result = [];
-
-        foreach ($parts as $part) {
-            [$key, $value] = explode(':', $part, 2) + [null, null];
-            if ($key && $value) {
-                $result[$key] = $value;
-            }
-        }
-
-        return $result;
-    }
-
-    public function checkConnection(): JsonResponse
-    {
-        try {
-            $this->transport->open();
-            $this->smppClient->bindTransceiver($this->login, $this->password);
-            $alive = $this->smppClient->enquireLink();
-            $this->smppClient->close();
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Connection is alive',
-                'alive' => $alive,
-            ]);
-        } catch (Exception $e) {
-            Log::error("Connection failed: " . $e->getMessage());
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Connection failed: ' . $e->getMessage(),
-                'note' => 'Ensure the server is reachable and the credentials are correct & your host is whitelisted.',
-            ], 500);
-        }
-    }
-}
-
+```bash
+php artisan vendor:publish --provider="Kstmostofa\\LaravelSmpp\\LaravelSmppServiceProvider" --tag="smpp-config"
 ```
 
-This wrapper implement some kind of Builder pattern, usage example:
+This will create a `config/smpp.php` file in your application, which you can modify to set your SMPP server details and other options.
+
+Alternatively, you can set the following environment variables in your `.env` file:
+
+```
+SMPP_HOST=127.0.0.1
+SMPP_PORT=2775
+SMPP_USERNAME=smppuser
+SMPP_PASSWORD=smpppass
+SMPP_TIMEOUT=10000
+SMPP_DEBUG=false
+```
+
+### Usage
+
+This package provides a Facade for convenient access to the `SmppClient`.
+
+```php
+use Kstmostofa\LaravelSmpp\Facades\LaravelSmpp;
+
+// To send an SMS
+LaravelSmpp::sendSMS(...);
+
+// To check connection
+LaravelSmpp::enquireLink();
+
+// To set custom configuration
+LaravelSmpp::setConfig([...]);
+```
+
+#### Full Example (Controller)
+
 ```php
 <?php
 
 namespace App\Http\Controllers;
 
-use App\Services\SmsBuilder;
-use smpp\SMPP;
+use Kstmostofa\LaravelSmpp\Facades\LaravelSmpp;
+use Kstmostofa\LaravelSmpp\Address;
+use Kstmostofa\LaravelSmpp\SMPP;
+use Illuminate\Http\Request;
 
-class SmsController extends Controller
+class SmppController extends Controller
 {
-
-    public function send()
+    public function sendSms(Request $request)
     {
-        $sms = new SmsBuilder('127.0.0.1', 2775, 'your_login', 'your_password');
+        try {
+            LaravelSmpp::getTransport()->open();
+            LaravelSmpp::bindTransceiver();
 
+            $from = new Address('SENDER', SMPP::TON_ALPHANUMERIC);
+            $to = new Address($request->input('recipient'), SMPP::TON_INTERNATIONAL);
 
-        return $sms->setRecipient('79000000000', SMPP::TON_INTERNATIONAL)
-            ->sendMessage('This is test message', true);
-            // Send true will wait for DLR (blocking read)
-            
-        
+            $messageId = LaravelSmpp::sendSMS(
+                $from,
+                $to,
+                $request->input('message'),
+                null,
+                SMPP::DATA_CODING_DEFAULT
+            );
+
+            LaravelSmpp::close();
+
+            return response()->json(['status' => 'success', 'message_id' => $messageId]);
+        } catch (\Exception $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
     }
 
-    public function checkConnectionStatus()
+    public function checkSmppConnection()
     {
-        $sms = new SmsBuilder('127.0.0.1', 2775, 'your_login', 'your_password');
+        try {
+            LaravelSmpp::getTransport()->open();
+            LaravelSmpp::bindTransceiver();
+            $alive = LaravelSmpp::enquireLink();
+            LaravelSmpp::close();
 
-        return $sms->checkConnection();
+            return response()->json(['status' => 'success', 'connection_alive' => $alive]);
+        } catch (\Exception $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
     }
 }
+```
 
+### Receiving Delivery Receipts (DLRs)
+
+To receive Delivery Receipts (DLRs) or incoming SMS messages, you typically need a long-running process that continuously listens for messages from the SMPP server. This is because SMPP is a persistent connection protocol.
+
+You can use the `readSMS()` method to read incoming messages. Remember to set the `registered_delivery` flag when sending an SMS to request a DLR.
+
+```php
+<?php
+
+namespace App\Http\Controllers;
+
+use Kstmostofa\LaravelSmpp\Facades\LaravelSmpp;
+use Kstmostofa\LaravelSmpp\SMPP;
+use Illuminate\Http\Request;
+
+class SmppReceiverController extends Controller
+{
+    public function listenForDLRs()
+    {
+        try {
+            // Ensure you are bound as a receiver or transceiver
+            LaravelSmpp::getTransport()->open();
+            LaravelSmpp::bindTransceiver(); // Or bindReceiver() if only receiving
+
+            echo "Listening for DLRs and incoming messages...\n";
+
+            while (true) {
+                $sms = LaravelSmpp::readSMS();
+
+                if ($sms) {
+                    if ($sms->isDeliveryReceipt()) {
+                        echo "Received DLR for message ID: " . $sms->messageId . "\n";
+                        echo "Status: " . $sms->status . "\n";
+                        // Process DLR, update database, etc.
+                    } else {
+                        echo "Received incoming SMS from: " . $sms->source->value . "\n";
+                        echo "Message: " . $sms->message . "\n";
+                        // Process incoming SMS
+                    }
+                }
+
+                // Implement a small delay to prevent busy-waiting
+                usleep(100000); // 100ms
+            }
+
+            LaravelSmpp::close();
+        } catch (\Exception $e) {
+            echo "Error: " . $e->getMessage() . "\n";
+            // Log the error, attempt to reconnect, etc.
+        }
+    }
+
+    // When sending an SMS, ensure you request a DLR
+    public function sendSmsWithDLRRequest(Request $request)
+    {
+        try {
+            LaravelSmpp::getTransport()->open();
+            LaravelSmpp::bindTransceiver();
+
+            $from = new Address('SENDER', SMPP::TON_ALPHANUMERIC);
+            $to = new Address($request->input('recipient'), SMPP::TON_INTERNATIONAL);
+
+            $messageId = LaravelSmpp::sendSMS(
+                $from,
+                $to,
+                $request->input('message'),
+                null,
+                SMPP::DATA_CODING_DEFAULT,
+                0x00, // priority
+                null, // scheduleDeliveryTime
+                null, // validityPeriod
+                SMPP::REG_DELIVERY_SMSC_BOTH // Request DLR
+            );
+
+            LaravelSmpp::close();
+
+            return response()->json(['status' => 'success', 'message_id' => $messageId]);
+        } catch (\Exception $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+}
+```
+
+**Important Considerations for DLRs:**
+
+*   **Long-Running Processes:** Laravel controllers are typically short-lived. For a true DLR listener, you would usually implement this in a custom Artisan command, a queue worker, or a separate daemon process (e.g., using Supervisor).
+*   **`registered_delivery` Flag:** When sending an SMS, ensure you set the `registered_delivery` flag (e.g., `SMPP::REG_DELIVERY_SMSC_BOTH`) to instruct the SMSC to send a DLR.
+*   **Error Handling & Reconnection:** Robust DLR listeners need comprehensive error handling, including graceful disconnections and reconnection logic.
+*   **Concurrency:** If you expect a high volume of DLRs, consider how to handle concurrency and avoid blocking operations.
+
+### Custom Configuration (Runtime)
+
+
+If you need to use different SMPP settings for specific operations without modifying the published configuration file or environment variables, you can use the `setConfig` method on the `SmppClient` instance:
+
+```php
+<?php
+
+namespace App\Http\Controllers;
+
+use Kstmostofa\LaravelSmpp\Facades\LaravelSmpp;
+use Kstmostofa\LaravelSmpp\Address;
+use Kstmostofa\LaravelSmpp\SMPP;
+use Illuminate\Http\Request;
+
+class SmppController extends Controller
+{
+    public function sendSmsWithCustomConfig(Request $request)
+    {
+        // Override configuration for this specific operation
+        LaravelSmpp::setConfig([
+            'host' => 'your_custom_host',
+            'port' => 2776,
+            'username' => 'custom_user',
+            'password' => 'custom_pass',
+            'timeout' => 5000,
+            'debug' => true,
+        ]);
+
+        try {
+            LaravelSmpp::getTransport()->open();
+            LaravelSmpp::bindTransceiver();
+
+            $from = new Address('CUSTOM_SENDER', SMPP::TON_ALPHANUMERIC);
+            $to = new Address($request->input('recipient'), SMPP::TON_INTERNATIONAL);
+
+            $messageId = LaravelSmpp::sendSMS(
+                $from,
+                $to,
+                $request->input('message'),
+                null,
+                SMPP::DATA_CODING_DEFAULT
+            );
+
+            LaravelSmpp::close();
+
+            return response()->json(['status' => 'success', 'message_id' => $messageId]);
+        } catch (\Exception $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+}
 ```
 
 Original description
@@ -219,21 +272,21 @@ The (configurable) send timeout governs how long it will wait for each server to
 
 The transport supports IPv6 and will prefer IPv6 addresses over IPv4 when available. You can modify this feature by setting forceIpv6 or forceIpv4 to force it to only use IPv6 or IPv4.
 
-In addition to the DNS lookups, it will also look for local IPv4 addresses using gethostbyname(), so "localhost" works for IPv4. For IPv6 localhost specify "::1". 
+In addition to the DNS lookups, it will also look for local IPv4 addresses using gethostbyname(), so "localhost" works for IPv4. For IPv6 localhost specify "::1".
 
 
 Implementation notes
 -----
 
- - You can't connect as a transceiver, otherwise supported by SMPP v.3.4
- - The SUBMIT_MULTI operation of SMPP, which sends a SMS to a list of recipients, is not supported atm. You can easily add it though.
- - The sockets will return false if the timeout is reached on read() (but not readAll or write). 
-   You can use this feature to implement an enquire_link policy. If you need to send enquire_link for every 30 seconds of inactivity, 
-   set a timeout of 30 seconds, and send the enquire_link command after readSMS() returns false.
- - The examples above assume that the SMSC default datacoding is [GSM 03.38](http://en.wikipedia.org/wiki/GSM_03.38).
- - Remember to activate registered delivery if you want delivery receipts (set to SMPP::REG_DELIVERY_SMSC_BOTH / 0x01).
- - Both the SmppClient and transport components support a debug callback, which defaults to [error_log](http://www.php.net/manual/en/function.error-log.php) . Use this to redirect debug information.
- 
+- You can't connect as a transceiver, otherwise supported by SMPP v.3.4
+- The SUBMIT_MULTI operation of SMPP, which sends a SMS to a list of recipients, is not supported atm. You can easily add it though.
+- The sockets will return false if the timeout is reached on read() (but not readAll or write).
+  You can use this feature to implement an enquire_link policy. If you need to send enquire_link for every 30 seconds of inactivity,
+  set a timeout of 30 seconds, and send the enquire_link command after readSMS() returns false.
+- The examples above assume that the SMSC default datacoding is [GSM 03.38](http://en.wikipedia.org/wiki/GSM_03.38).
+- Remember to activate registered delivery if you want delivery receipts (set to SMPP::REG_DELIVERY_SMSC_BOTH / 0x01).
+- Both the SmppSmppClient and transport components support a debug callback, which defaults to [error_log](http://www.php.net/manual/en/function.error-log.php) . Use this to redirect debug information.
+
 F.A.Q.
 -----
 
@@ -255,7 +308,7 @@ It's tested on PHP 5.3, but is known to work with 5.2 as well.
 It requires the sockets extension, which is available on windows, but is incomplete. Use the [windows-compatible](https://github.com/onlinecity/php-smpp/tree/windows-compatible) version instead, which uses fsockopen and stream functions.
 
 **Why am I not seeing any debug output?**  
-Remember to implement a debug callback for SocketTransport and SmppClient to use. Otherwise they default to [error_log](http://www.php.net/manual/en/function.error-log.php) which may or may not print to screen. 
+Remember to implement a debug callback for SocketTransport and SmppSmppClient to use. Otherwise they default to [error_log](http://www.php.net/manual/en/function.error-log.php) which may or may not print to screen.
 
 **Why do I get 'res_nsend() failed' or 'Could not connect to any of the specified hosts' errors?**  
 Your provider's DNS server probably has an issue with IPv6 addresses (AAAA records). Try to set ```SocketTransport::$forceIpv4=true;```. You can also try specifying an IP-address (or a list of IPs) instead. Setting ```SocketTransport:$defaultDebug=true;``` before constructing the transport is also useful in resolving connection issues.
@@ -264,7 +317,7 @@ Your provider's DNS server probably has an issue with IPv6 addresses (AAAA recor
 It would be a firewall issue that's preventing your connection, or something else entirely. Make sure debug output is enabled and displayed. If you see something like 'Socket connect to 1.2.3.4:2775 failed; Operation timed out' this means a connection could not be etablished. If this isn't a firewall issue, you might try increasing the connect timeout. The sendTimeout also specifies the connect timeout, call ```$transport->setSendTimeout(10000);``` to set a 10-second timeout.
 
 **Why do I get 'Failed to read reply to command: 0x4', 'Message Length is invalid' or 'Error in optional part' errors?**  
-Most likely your SMPP provider doesn't support NULL-terminating the message field. The specs aren't clear on this issue, so there is a toggle. Set ```SmppClient::$sms_null_terminate_octetstrings = false;``` and try again.  
+Most likely your SMPP provider doesn't support NULL-terminating the message field. The specs aren't clear on this issue, so there is a toggle. Set ```SmppSmppClient::$sms_null_terminate_octetstrings = false;``` and try again.
 
 **What does 'Bind Failed' mean?**  
 It typically means your SMPP provider rejected your login credentials, ie. your username or password.

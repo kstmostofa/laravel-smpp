@@ -1,11 +1,11 @@
 <?php
 
 
-namespace smpp;
+namespace Kstmostofa\LaravelSmpp;
 
 /**
  * An extension of a SMS, with data embedded into the message part of the SMS.
- * @author hd@onlinecity.dk
+ * @author mostofa122@gmail.com
  */
 class DeliveryReceipt extends Sms
 {

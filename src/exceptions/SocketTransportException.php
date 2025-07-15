@@ -1,7 +1,7 @@
 <?php
 
 
-namespace smpp\exceptions;
+namespace Kstmostofa\LaravelSmpp\Exceptions;
 
 
 class SocketTransportException extends \RuntimeException

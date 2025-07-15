@@ -1,11 +1,11 @@
 <?php
 
 
-namespace smpp;
+namespace Kstmostofa\LaravelSmpp;
 
 /**
  * Primitive class to represent SMPP optional params, also know as TLV (Tag-Length-Value) params
- * @author hd@onlinecity.dk
+ * @author mostofa122@gmail.com
  */
 class Tag
 {

@@ -2,9 +2,9 @@
 
 /**
  * Primitive class for encapsulating PDUs
- * @author hd@onlinecity.dk
+ * @author mostofa122@gmail.com
  */
-namespace smpp;
+namespace Kstmostofa\LaravelSmpp;
 
 
 class Pdu

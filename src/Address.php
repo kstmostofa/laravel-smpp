@@ -1,11 +1,11 @@
 <?php
 
 
-namespace smpp;
+namespace Kstmostofa\LaravelSmpp;
 
 /**
  * Primitive class for encapsulating smpp addresses
- * @author hd@onlinecity.dk
+ * @author mostofa122@gmail.com
  */
 class Address
 {

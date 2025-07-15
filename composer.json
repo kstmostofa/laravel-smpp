@@ -1,26 +1,44 @@
 {
   "name": "kstmostofa/laravel-smpp",
-  "description": "PHP SMPP client lib, supports SMPP v3.4",
-  "keywords": ["smpp", "sms", "texting", "gsm"],
+  "description": "A Laravel package for sending SMS using the SMPP protocol, built on top of the PHP-SMPP library. This package provides a simple and efficient way to integrate SMS functionality into your Laravel applications.",
+  "keywords": [
+    "smpp",
+    "sms",
+    "texting",
+    "gsm"
+  ],
   "homepage": "https://github.com/kstmostofa/laravel-smpp",
   "type": "library",
-  "license": "LGPL-2.0-or-later",
+  "license": "MIT",
   "authors": [
     {
       "name": "Md Mostafijur Rahman",
-      "email": "mostofa122@gmail.com"
+      "email": "mostofa122@gmail.com",
+      "homepage": "https://mostofa.me",
+      "role": "Developer"
     }
   ],
   "require": {
-    "php": ">=5.4",
+    "php": ">=8.0",
     "ext-sockets": "*",
-    "ext-mbstring": "*"
+    "ext-mbstring": "*",
+    "illuminate/support": "^8.0 || ^9.0 || ^10.0 || ^11.0 || ^12.0"
   },
   "require-dev": {
   },
   "autoload": {
     "psr-4": {
-      "smpp\\":   "src/"
+      "Kstmostofa\\LaravelSmpp\\": "src/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "Kstmostofa\\LaravelSmpp\\LaravelSmppServiceProvider"
+      ],
+      "aliases": {
+        "LaravelSmpp": "Kstmostofa\\LaravelSmpp\\Facades\\LaravelSmpp"
+      }
     }
   }
 }

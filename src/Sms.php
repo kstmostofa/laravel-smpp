@@ -1,11 +1,11 @@
 <?php
 
 
-namespace smpp;
+namespace Kstmostofa\LaravelSmpp;
 
 /**
  * Primitive type to represent SMSes
- * @author hd@onlinecity.dk
+ * @author mostofa122@gmail.com
  */
 class Sms extends Pdu
 {

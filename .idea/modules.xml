@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/php-smpp-1d3b53c2d2b63d51ab70009d956914b7f8903118.iml" filepath="$PROJECT_DIR$/.idea/php-smpp-1d3b53c2d2b63d51ab70009d956914b7f8903118.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/laravel-smpp.iml" filepath="$PROJECT_DIR$/.idea/laravel-smpp.iml" />
     </modules>
   </component>
 </project>
