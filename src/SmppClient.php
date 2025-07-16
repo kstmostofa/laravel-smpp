@@ -546,7 +546,7 @@ class SmppClient
 
         $response = $this->sendCommand(SMPP::SUBMIT_SM, $pdu);
         $body = unpack("a*msgid", $response->body);
-        return $body['msgid'];
+        return trim($body['msgid'], "\x00..\x1F");
     }
 
     /**
