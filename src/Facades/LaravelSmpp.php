@@ -306,19 +306,15 @@ class LaravelSmpp extends Facade
      * @return string message id
      */
     public static function sendSMS(
-        \Kstmostofa\LaravelSmpp\Address $from,
-        \Kstmostofa\LaravelSmpp\Address $to,
-                $message,
-                $tags = null,
-                $dataCoding = \Kstmostofa\LaravelSmpp\SMPP::DATA_CODING_DEFAULT,
-                $priority = 0x00,
-                $scheduleDeliveryTime = null,
-                $validityPeriod = null
+        $message,
+        $tags = null,
+        $dataCoding = \Kstmostofa\LaravelSmpp\SMPP::DATA_CODING_DEFAULT,
+        $priority = 0x00,
+        $scheduleDeliveryTime = null,
+        $validityPeriod = null
     )
     {
         return static::getSmppClient()->sendSMS(
-            $from,
-            $to,
             $message,
             $tags,
             $dataCoding,
@@ -335,5 +331,20 @@ class LaravelSmpp extends Facade
     public static function readSMS()
     {
         return static::getSmppClient()->readSMS();
+    }
+
+    public static function setSender($sender, $ton = \Kstmostofa\LaravelSmpp\SMPP::TON_ALPHANUMERIC, $npi = \Kstmostofa\LaravelSmpp\SMPP::NPI_UNKNOWN)
+    {
+        return static::getSmppClient()->setSender($sender, $ton, $npi);
+    }
+
+    public static function setRecipient($recipient, $ton = \Kstmostofa\LaravelSmpp\SMPP::TON_INTERNATIONAL, $npi = \Kstmostofa\LaravelSmpp\SMPP::NPI_UNKNOWN)
+    {
+        return static::getSmppClient()->setRecipient($recipient, $ton, $npi);
+    }
+
+    public static function requestDLR($delivery = \Kstmostofa\LaravelSmpp\SMPP::REG_DELIVERY_SMSC_BOTH)
+    {
+        return static::getSmppClient()->requestDLR($delivery);
     }
 }

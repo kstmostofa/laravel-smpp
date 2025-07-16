@@ -101,6 +101,10 @@ class SmppClient
     public $sequenceNumber;
     public $sarMessageReferenceNumber;
 
+    protected $sender;
+    protected $recipient;
+    protected $registeredDelivery;
+
     /**
      * Construct the SMPP class
      *
@@ -383,16 +387,18 @@ class SmppClient
      * @return string message id
      */
     public function sendSMS(
-        Address $from,
-        Address $to,
-                $message,
-                $tags = null,
-                $dataCoding = SMPP::DATA_CODING_DEFAULT,
-                $priority = 0x00,
-                $scheduleDeliveryTime = null,
-                $validityPeriod = null
+        $message,
+        $tags = null,
+        $dataCoding = SMPP::DATA_CODING_DEFAULT,
+        $priority = 0x00,
+        $scheduleDeliveryTime = null,
+        $validityPeriod = null
     )
     {
+        self::$smsRegisteredDeliveryFlag = $this->registeredDelivery;
+        $from = $this->sender;
+        $to = $this->recipient;
+        $message = (string) $message;
         $messageLength = strlen($message);
 
         if ($messageLength > 160 && $dataCoding != SMPP::DATA_CODING_UCS2 && $dataCoding != SMPP::DATA_CODING_DEFAULT) {
@@ -510,6 +516,7 @@ class SmppClient
                 $esmClass = null
     ) {
         if (is_null($esmClass)) $esmClass = self::$smsEsmClass;
+        $short_message = (string) $short_message;
 
         // Construct PDU with mandatory fields
         $pdu = pack(
@@ -1050,5 +1057,23 @@ class SmppClient
     public function getTransport()
     {
         return $this->transport;
+    }
+
+    public function setSender($sender, $ton = SMPP::TON_ALPHANUMERIC, $npi = SMPP::NPI_UNKNOWN)
+    {
+        $this->sender = new Address($sender, $ton, $npi);
+        return $this;
+    }
+
+    public function setRecipient($recipient, $ton = SMPP::TON_INTERNATIONAL, $npi = SMPP::NPI_UNKNOWN)
+    {
+        $this->recipient = new Address($recipient, $ton, $npi);
+        return $this;
+    }
+
+    public function requestDLR($delivery = SMPP::REG_DELIVERY_SMSC_BOTH)
+    {
+        $this->registeredDelivery = $delivery;
+        return $this;
     }
 }
