@@ -28,6 +28,8 @@ class Socket
     protected static $defaultSendTimeout = 100;
     protected static $defaultRecvTimeout = 750;
     public static $defaultDebug = false;
+    // New: default connect timeout (ms)
+    protected static $defaultConnectTimeout = 5000;
 
     public static $forceIpv6 = false;
     public static $forceIpv4 = false;
@@ -224,6 +226,12 @@ class Socket
         }
     }
 
+    /** Set default connect timeout (ms) before open() */
+    public static function setDefaultConnectTimeout($ms)
+    {
+        self::$defaultConnectTimeout = (int)$ms;
+    }
+
     /**
      * Check if the socket is constructed, and there are no exceptions on it
      * Returns false if it's closed.
@@ -268,79 +276,121 @@ class Socket
     }
 
     /**
+     * Internal helper: attempt a non-blocking connect with timeout handling.
+     * Returns true on success; on failure updates $lastErrorCode/$lastErrorMsg.
+     */
+    private function attemptConnect($family, $ip, $port, &$lastErrorCode, &$lastErrorMsg)
+    {
+        $sock = @socket_create($family, SOCK_STREAM, SOL_TCP);
+        if ($sock === false) {
+            $lastErrorCode = socket_last_error();
+            $lastErrorMsg = socket_strerror($lastErrorCode);
+            if ($this->debug) call_user_func($this->debugHandler, "Could not create socket ($family); $lastErrorMsg");
+            return false;
+        }
+        // Apply I/O timeouts
+        @socket_set_option($sock, SOL_SOCKET, SO_SNDTIMEO, $this->millisecToSolArray(self::$defaultSendTimeout));
+        @socket_set_option($sock, SOL_SOCKET, SO_RCVTIMEO, $this->millisecToSolArray(self::$defaultRecvTimeout));
+
+        // Make non-blocking for implementing our own connect timeout
+        @socket_set_nonblock($sock);
+        $r = @socket_connect($sock, $ip, $port);
+        if ($r) { // immediate success
+            @socket_set_block($sock);
+            $this->socket = $sock;
+            return true;
+        }
+        $err = socket_last_error($sock);
+        // Transient / in-progress errors we can wait on
+        $transient = [
+            defined('SOCKET_EINPROGRESS') ? SOCKET_EINPROGRESS : 115,
+            defined('SOCKET_EALREADY') ? SOCKET_EALREADY : 114,
+            defined('SOCKET_EWOULDBLOCK') ? SOCKET_EWOULDBLOCK : 11,
+        ];
+        if (in_array($err, $transient, true)) {
+            $sec = (int)floor(self::$defaultConnectTimeout / 1000);
+            $usec = (self::$defaultConnectTimeout % 1000) * 1000;
+            $rArr = null;
+            $wArr = [$sock];
+            $eArr = [$sock];
+            $sel = @socket_select($rArr, $wArr, $eArr, $sec, $usec);
+            if ($sel === false) {
+                $lastErrorCode = socket_last_error($sock);
+                $lastErrorMsg = socket_strerror($lastErrorCode);
+            } elseif ($sel === 0) {
+                $lastErrorMsg = 'Connection timed out';
+                // Use generic ETIMEDOUT if defined else fallback 110
+                $lastErrorCode = defined('SOCKET_ETIMEDOUT') ? SOCKET_ETIMEDOUT : 110;
+            } else {
+                // Writable => check SO_ERROR
+                $soErr = @socket_get_option($sock, SOL_SOCKET, SO_ERROR);
+                if ($soErr === 0 || $soErr === '0') {
+                    @socket_set_block($sock);
+                    $this->socket = $sock;
+                    return true;
+                }
+                $lastErrorCode = $soErr ?: $err;
+                $lastErrorMsg = socket_strerror($lastErrorCode);
+            }
+        } else {
+            $lastErrorCode = $err;
+            $lastErrorMsg = socket_strerror($err);
+        }
+        if ($this->debug) call_user_func($this->debugHandler, "Connect to $ip:$port failed; $lastErrorMsg ($lastErrorCode)");
+        @socket_close($sock);
+        return false;
+    }
+
+    /**
      * Open the socket, trying to connect to each host in succession.
      * This will prefer IPv6 connections if forceIpv4 is not enabled.
      * If all hosts fail, a SocketTransportException is thrown.
+     *
+     * NOTE: Previous implementation reused the same socket resource for multiple
+     * connect attempts. After a failed connect some OS stacks leave the socket
+     * in a bad state causing all subsequent attempts to fail even if the next
+     * IP is reachable. We now create a fresh socket per IP attempt.
      *
      * @throws SocketTransportException
      */
     public function open()
     {
-        if (!self::$forceIpv4) {
-            $socket6 = @socket_create(AF_INET6, SOCK_STREAM, SOL_TCP);
-            if ($socket6 == false) {
-                throw new SocketTransportException(
-                    'Could not create socket; ' . socket_strerror(socket_last_error()),
-                    socket_last_error()
-                );
-            }
-            socket_set_option(
-                $socket6,
-                SOL_SOCKET,
-                SO_SNDTIMEO,
-                $this->millisecToSolArray(self::$defaultSendTimeout)
-            );
-            socket_set_option(
-                $socket6,
-                SOL_SOCKET,
-                SO_RCVTIMEO,
-                $this->millisecToSolArray(self::$defaultRecvTimeout)
-            );
-        }
-        if (!self::$forceIpv6) {
-            $socket4 = @socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-            if ($socket4 == false) {
-                throw new SocketTransportException('Could not create socket; ' . socket_strerror(socket_last_error()), socket_last_error());
-            }
-            socket_set_option($socket4, SOL_SOCKET, SO_SNDTIMEO, $this->millisecToSolArray(self::$defaultSendTimeout));
-            socket_set_option($socket4, SOL_SOCKET, SO_RCVTIMEO, $this->millisecToSolArray(self::$defaultRecvTimeout));
-        }
+        $lastErrorCode = null;
+        $lastErrorMsg = null;
+
         $it = new \ArrayIterator($this->hosts);
         while ($it->valid()) {
             list($hostname, $port, $ip6s, $ip4s) = $it->current();
-            if (!self::$forceIpv4 && !empty($ip6s)) { // Attempt IPv6s first
+
+            // IPv6 first unless forced otherwise
+            if (!self::$forceIpv4 && !empty($ip6s)) {
                 foreach ($ip6s as $ip) {
-                    if ($this->debug) {
-                        call_user_func($this->debugHandler, "Connecting to $ip:$port...");
-                    }
-                    $r = @socket_connect($socket6, $ip, $port);
-                    if ($r) {
-                        if ($this->debug) {
-                            call_user_func($this->debugHandler, "Connected to $ip:$port!");
-                        }
-                        @socket_close($socket4);
-                        $this->socket = $socket6;
+                    if ($this->debug) call_user_func($this->debugHandler, "Connecting to $ip:$port (IPv6)...");
+                    if ($this->attemptConnect(AF_INET6, $ip, $port, $lastErrorCode, $lastErrorMsg)) {
+                        if ($this->debug) call_user_func($this->debugHandler, "Connected to $ip:$port (IPv6)!");
                         return;
-                    } elseif ($this->debug) {
-                        call_user_func($this->debugHandler, "Socket connect to $ip:$port failed; " . socket_strerror(socket_last_error()));
                     }
                 }
             }
+
             if (!self::$forceIpv6 && !empty($ip4s)) {
                 foreach ($ip4s as $ip) {
-                    if ($this->debug) call_user_func($this->debugHandler, "Connecting to $ip:$port...");
-                    $r = @socket_connect($socket4, $ip, $port);
-                    if ($r) {
-                        if ($this->debug) call_user_func($this->debugHandler, "Connected to $ip:$port!");
-                        @socket_close($socket6);
-                        $this->socket = $socket4;
+                    if ($this->debug) call_user_func($this->debugHandler, "Connecting to $ip:$port (IPv4)...");
+                    if ($this->attemptConnect(AF_INET, $ip, $port, $lastErrorCode, $lastErrorMsg)) {
+                        if ($this->debug) call_user_func($this->debugHandler, "Connected to $ip:$port (IPv4)!");
                         return;
-                    } elseif ($this->debug) {
-                        call_user_func($this->debugHandler, "Socket connect to $ip:$port failed; " . socket_strerror(socket_last_error()));
                     }
                 }
             }
             $it->next();
+        }
+
+        // If we reach here everything failed
+        if ($lastErrorCode !== null) {
+            throw new SocketTransportException(
+                'Could not connect to any of the specified hosts; last error: ' . $lastErrorMsg,
+                $lastErrorCode
+            );
         }
         throw new SocketTransportException('Could not connect to any of the specified hosts');
     }

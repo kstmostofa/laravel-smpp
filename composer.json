@@ -1,5 +1,5 @@
 {
-  "name": "kstmostofa/laravel-smpp",
+  "name": "kstmostofa/laravel-smpp-client",
   "description": "A Laravel package for sending SMS using the SMPP protocol, built on top of the PHP-SMPP library. This package provides a simple and efficient way to integrate SMS functionality into your Laravel applications.",
   "keywords": [
     "smpp",
